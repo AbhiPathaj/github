@@ -1,31 +1,63 @@
-//
-//  ProfileViewController.swift
-//  github
-//
-//  Created by Abhishek Pathak on 11/03/25.
-//
-
 import UIKit
 
 class ProfileViewController: UIViewController {
+    
     // OUTLETS
-    @IBOutlet weak var userProfilePicture: UIImageView!
-    @IBOutlet weak var userName: UILabel!
+    @IBOutlet weak var userProfilePicture: UIImageView!{
+        didSet{
+            userProfilePicture.isHidden = true
+        }
+    }
+    @IBOutlet weak var bio: UILabel!{
+        didSet{
+            bio.isHidden = true
+        }
+    }
+    @IBOutlet weak var userName: UILabel!{
+        didSet{
+            userName.isHidden = true
+        }
+    }
     
     // VARIABLES
     var user: GithubUser?
     var id: Int?
-    var userID: String? = "Abhishekpathak2"
-    
+    var userID: String? = "AbhiPathaj"
+    var activityIndicator = UIActivityIndicatorView(style: .large)
+
     override func viewDidLoad() {
         super.viewDidLoad()
+        
+        setupUI()
         Task {
             await setData()
         }
     }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+    }
     
-    // METHODS
+    // Setup UI & Activity Indicator
+    func setupUI() {
+        activityIndicator.center = view.center
+        activityIndicator.hidesWhenStopped = true
+        view.addSubview(activityIndicator)
+    }
+    
+    func setupProfilePicture() {
+        bio.isHidden = false
+        userProfilePicture.isHidden = false
+        userName.isHidden = false
+        userProfilePicture.layer.cornerRadius = userProfilePicture.frame.height / 2
+        userProfilePicture.clipsToBounds = true
+        userProfilePicture.contentMode = .scaleAspectFill
+    }
+
+    // Fetch GitHub User Data
     func getUserData() async throws -> GithubUser? {
+        try await Task.sleep(nanoseconds: 2_000_000_000) // Non-blocking delay
+        
         let endPoint = "https://api.github.com/users/\(userID ?? "")"
         guard let url = URL(string: endPoint) else {
             throw NSError(domain: "Invalid URL", code: 1001, userInfo: nil)
@@ -38,49 +70,77 @@ class ProfileViewController: UIViewController {
         
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
-        let user = try decoder.decode(GithubUser.self, from: data)
-        return user
+        return try decoder.decode(GithubUser.self, from: data)
     }
-    
+
+    // Set Data after API Call
     func setData() async {
+         showLoading()
         do {
             if let userData = try await getUserData() {
-                DispatchQueue.main.async { [weak self] in
-                    guard let self = self else { return }
-                    self.user = userData
-                    self.userName.text = self.user?.login
-                    self.id = self.user?.id
-                    
-                    self.downloadImage(from: self.user?.avatarUrl ?? "") { image in
-                        DispatchQueue.main.async {
-                            self.userProfilePicture.image = image
-                        }
-                    }
-                }
+                user = userData
+                 updateUI()
             } else {
-                DispatchQueue.main.async {
-                    self.userName.text = "User data not available"
-                }
+                 updateUI(withError: "User data not available")
             }
         } catch {
-            DispatchQueue.main.async {
-                self.userName.text = "Error: \(error.localizedDescription)"
+             updateUI(withError: "Error: \(error.localizedDescription)")
+        }
+         hideLoading()
+    }
+    
+    // Update UI
+    @MainActor
+    func updateUI() {
+        userName.text = user?.name
+        bio.text = user?.bio
+        id = user?.id
+
+        if let avatarUrl = user?.avatarUrl {
+            downloadImage(from: avatarUrl) { image in
+                DispatchQueue.main.async {
+                    self.userProfilePicture.image = image
+                    self.setupProfilePicture()
+                }
             }
         }
     }
+
+    // Update UI on Error
+    @MainActor
+    func updateUI(withError message: String) {
+        userName.text = message
+        bio.text = ""
+    }
     
+    // Download Image
     func downloadImage(from url: String, completion: @escaping (UIImage?) -> Void) {
         guard let imageUrl = URL(string: url) else {
             completion(nil)
             return
         }
 
-        URLSession.shared.dataTask(with: imageUrl) { data, response, error in
-            guard let data = data, error == nil, let image = UIImage(data: data) else {
+        URLSession.shared.dataTask(with: imageUrl) { data, _, error in
+            if let data = data, error == nil {
+                completion(UIImage(data: data))
+            } else {
                 completion(nil)
-                return
             }
-            completion(image)
         }.resume()
+    }
+}
+
+// MARK: - Activity Indicator Extension
+extension ProfileViewController {
+    @MainActor
+    func showLoading() {
+        activityIndicator.startAnimating()
+        view.isUserInteractionEnabled = false
+    }
+
+    @MainActor
+    func hideLoading() {
+        activityIndicator.stopAnimating()
+        view.isUserInteractionEnabled = true
     }
 }

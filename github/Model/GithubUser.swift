@@ -10,6 +10,8 @@ import Foundation
 struct GithubUser: Codable {
     let login: String
     let avatarUrl: String
+    let gravatarId: String
     let bio: String?
     let id: Int?
+    let name: String
 }
