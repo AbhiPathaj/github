@@ -8,55 +8,67 @@
 import UIKit
 
 class ProfileViewController: UIViewController {
-    //OUTLETS
+    // OUTLETS
     @IBOutlet weak var userProfilePicture: UIImageView!
     @IBOutlet weak var userName: UILabel!
-    //ACTIONS
     
-    //VARIABLES
+    // VARIABLES
     var user: GithubUser?
-    var id: Int??
+    var id: Int?
     var userID: String? = "Abhishekpathak2"
+    
     override func viewDidLoad() {
         super.viewDidLoad()
-        Task{
+        Task {
             await setData()
         }
     }
-    //METHODS
-    func getUserData() async throws -> (GithubUser?,NSError){
+    
+    // METHODS
+    func getUserData() async throws -> GithubUser? {
         let endPoint = "https://api.github.com/users/\(userID ?? "")"
-        guard let url = URL(string: endPoint) else{
+        guard let url = URL(string: endPoint) else {
             throw NSError(domain: "Invalid URL", code: 1001, userInfo: nil)
         }
-        let (data,response) = try await URLSession.shared.data(from: url)
-        guard let response = response as? HTTPURLResponse, response.statusCode == 200 else{
+        
+        let (data, response) = try await URLSession.shared.data(from: url)
+        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
             throw NSError(domain: "Failed to fetch data", code: 1002, userInfo: nil)
         }
+        
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
-        let user: GithubUser? = try decoder.decode(GithubUser.self, from: data)
-        return (user,NSError(domain: "No Error", code: 1000, userInfo: nil))
+        let user = try decoder.decode(GithubUser.self, from: data)
+        return user
     }
+    
     func setData() async {
-        do{
-            let(userData,error) =  try await getUserData()
-            guard let userData = userData else {
-                self.userName.text = error.localizedDescription
-                return
-            }
-            self.user = userData
-            self.userName.text = self.user?.login
-            self.id = self.user?.id
-            downloadImage(from: self.user?.avatarUrl ?? "") { image in
-                if let img = image {
-                    self.userProfilePicture.image = img
+        do {
+            if let userData = try await getUserData() {
+                DispatchQueue.main.async { [weak self] in
+                    guard let self = self else { return }
+                    self.user = userData
+                    self.userName.text = self.user?.login
+                    self.id = self.user?.id
+                    
+                    self.downloadImage(from: self.user?.avatarUrl ?? "") { image in
+                        DispatchQueue.main.async {
+                            self.userProfilePicture.image = image
+                        }
+                    }
+                }
+            } else {
+                DispatchQueue.main.async {
+                    self.userName.text = "User data not available"
                 }
             }
-        }catch{
-           
+        } catch {
+            DispatchQueue.main.async {
+                self.userName.text = "Error: \(error.localizedDescription)"
+            }
         }
     }
+    
     func downloadImage(from url: String, completion: @escaping (UIImage?) -> Void) {
         guard let imageUrl = URL(string: url) else {
             completion(nil)
@@ -68,9 +80,7 @@ class ProfileViewController: UIViewController {
                 completion(nil)
                 return
             }
-            DispatchQueue.main.async {
-                completion(image)
-            }
+            completion(image)
         }.resume()
     }
 }
